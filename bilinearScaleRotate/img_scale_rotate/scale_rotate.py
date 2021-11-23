@@ -13,25 +13,27 @@ def mk_conf(args):
         "magnification": float(args[3]),
         "angle": float(args[4])
     }
-
+4
 def dataloader(img_path):
     img = cv2.imread(img_path)
     gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    print(f"\nimage loaded!\n")
+    print(f"\nimage loaded\n")
     return gray_img
 
-def resize(img, config):
+def processing(img, config):
     if config['method'] == "bilinear":
         return bilinear(img, int(img.shape[1]*config['magnification']), int(img.shape[0]*config['magnification']))
     elif config['method'] == "nearest":
         return nearest(img, int(img.shape[1]*config['magnification']), int(img.shape[0]*config['magnification']))
+    elif config['method'] == "affine":
+        return rotation(img, config["magnification"], config['angle'])
     else:
         raise ValueError
 
 # バイリニア補間法でリサイズ
 def bilinear(src, hd, wd):
-    dst = np.empty((hd, wd))
     h, w = src.shape[0], src.shape[1]
+    dst = np.empty((hd, wd))
     print(f"originl image size: {src.shape}\n")
     # 拡大率を計算(拡大縮小画像/原画像)
     ax = wd / float(w)
@@ -60,14 +62,15 @@ def bilinear(src, hd, wd):
                 src[oy][ox+1] + (1-dx) * dy * src[oy][ox+1] + \
                 dx * dy * src[oy+1][ox+1]
 
+    print("\nresized :-)")
     print(f"\nfixed image size: {dst.shape}\n")
 
     return dst
 
 # 最近傍補間法でリサイズ
 def nearest(src, h, w):
-    dst = np.empty((h,w))
     hi, wi = src.shape[0], src.shape[1]
+    dst = np.empty((h,w))
     print(f"originl image size: {src.shape}\n")
 
     # 拡大率を計算
@@ -84,27 +87,39 @@ def nearest(src, h, w):
 
             dst[y][x] = src[yi][xi]
 
+    print("\nresized :-)")
     print(f"\nfixed image size: {dst.shape}")
 
     return dst
 
-def rotate(src, theta, a=0, b=0):
+# アフィン変換による回転
+def rotation(src, magnification, theta):
     h, w = src.shape[0], src.shape[1]
     dst = np.zeros((h, w))
+    print(f"originl image size: {src.shape}\n")
+
+    cos = magnification*math.cos(math.radians(theta))
+    sin = magnification*math.sin(math.radians(theta))
+    center_x = w/2
+    center_y = h/2
 
     # 回転行列
     rotate_matrix = np.array(
-                [[math.cos(math.radians(theta)), -math.sin(math.radians(theta)), (-math.sqrt(w**2 + h**2)+w)/2],
-                [math.sin(math.radians(theta)), math.cos(math.radians(theta)), w/2],
-                [0,0,1]])
+                [[cos, -sin, center_x-center_x*cos+center_y*sin],
+                [sin, cos, center_y-center_x*sin-center_y*cos],
+                [0, 0, 1]
+                ])
 
     # 回転
-    for yd in range(0, h): # 画像のy軸
+    for yd in tqdm(range(0, h)): # 画像のy軸
         for xd in range(0, w): # 画像のx軸
             rotate_xy = rotate_matrix @ np.array([xd, yd, 1]) # 今の座標と回転行列の積 -> 回転後の座標を求める
-            if 0 < int(rotate_xy[0]) < h and 0 < int(rotate_xy[1]) < w:
-                dst[int(rotate_xy[1])][int(rotate_xy[0])] = src[yd][xd]
-    print(f"rotated!\n")
+            if 0 <= int(rotate_xy[0]) < w and 0 <= int(rotate_xy[1]) < h:
+                dst[yd][xd] = src[int(rotate_xy[1])][int(rotate_xy[0])]
+
+    print(f"\nfixed image size: {dst.shape}")
+    print(f"rotated :-)\n")
+
     return dst
 
 def output(img):
@@ -114,8 +129,7 @@ def output(img):
 def main():
     config = mk_conf(sys.argv)
     img = dataloader(config['img'])
-    fix_img = resize(img, config)
-    dst = rotate(fix_img, config['angle'])
+    dst = processing(img, config)
     output(dst)
 
 
